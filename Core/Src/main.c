@@ -4,16 +4,6 @@
   * @file           : main.c
   * @brief          : Main program body
   ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
@@ -26,10 +16,9 @@
 #include "ring_buffer.h"
 #include "room_control.h"
 #include <stdio.h>
-
+#include <string.h>
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +37,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim3;
@@ -56,14 +47,13 @@ DMA_HandleTypeDef hdma_tim3_ch1_trig;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t button_pressed = 0; // Flag to indicate if the button is pressed
-
+uint8_t button_pressed = 0;
 led_handle_t heartbeat_led = {
     .port = LD2_GPIO_Port,
     .pin = LD2_Pin
 };
 
-uint8_t usart_2_rxbyte = 0; // Variable to hold received byte from UART3
+uint8_t usart_2_rxbyte = 0;
 
 keypad_handle_t keypad = {
     .row_ports = {KEYPAD_R1_GPIO_Port, KEYPAD_R2_GPIO_Port, KEYPAD_R3_GPIO_Port, KEYPAD_R4_GPIO_Port},
@@ -71,14 +61,11 @@ keypad_handle_t keypad = {
     .col_ports = {KEYPAD_C1_GPIO_Port, KEYPAD_C2_GPIO_Port, KEYPAD_C3_GPIO_Port, KEYPAD_C4_GPIO_Port},
     .col_pins  = {KEYPAD_C1_Pin, KEYPAD_C2_Pin, KEYPAD_C3_Pin, KEYPAD_C4_Pin}
 };
-
 #define KEYPAD_BUFFER_LEN 16
 uint8_t keypad_buffer[KEYPAD_BUFFER_LEN];
 ring_buffer_t keypad_rb;
-
 volatile uint16_t keypad_interrupt_pin = 0;
 
-// Room control system instance
 room_control_t room_system;
 /* USER CODE END PV */
 
@@ -89,21 +76,24 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void serial_print(const char *msg) {
+    HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+}
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == B1_Pin) {
-    button_pressed = 1; // Set the flag when the button is pressed
+    button_pressed = 1;
   } else {
     keypad_interrupt_pin = GPIO_Pin;
   }
 }
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART2) {
@@ -111,24 +101,27 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   }
 }
 
-
 void heartbeat(void)
 {
-  static uint32_t last_toggle = 0;
-  if (HAL_GetTick() - last_toggle >= 500) { // Toggle every 500 ms
-    led_toggle(&heartbeat_led); // Toggle the heartbeat LED
-    last_toggle = HAL_GetTick();
-  }
+    static uint32_t last_toggle = 0;
+    extern room_control_t room_system;
+    if (room_control_get_state(&room_system) == ROOM_STATE_LOCKED) {
+        if (HAL_GetTick() - last_toggle >= 500) {
+            led_toggle(&heartbeat_led);
+            last_toggle = HAL_GetTick();
+        }
+    } else {
+        led_on(&heartbeat_led); // LED fijo encendido si está desbloqueado
+    }
 }
 
 void write_to_oled(char *message, SSD1306_COLOR color, uint8_t x, uint8_t y)
 {
-  ssd1306_Fill(Black); // Clear the display
-  ssd1306_SetCursor(x, y); // Set cursor to the specified position
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(x, y);
   ssd1306_WriteString(message, Font_7x10, color);
-  ssd1306_UpdateScreen(); // Update the display to show the message
+  ssd1306_UpdateScreen();
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -164,64 +157,53 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_TIM3_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   led_init(&heartbeat_led);
   ssd1306_Init();
   HAL_UART_Receive_IT(&huart2, &usart_2_rxbyte, 1);
-  
+
   ring_buffer_init(&keypad_rb, keypad_buffer, KEYPAD_BUFFER_LEN);
   keypad_init(&keypad);
-  
-  // TODO: TAREA - Descomentar cuando implementen la lógica del sistema
-  // room_control_init(&room_system);
 
+  room_control_init(&room_system);
+  room_control_set_serial_callback(serial_print);
+
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); // Habilita PWM para PA6
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // Clear the display
-  ssd1306_Fill(Black);
-  // Display a message on the OLED
-  ssd1306_SetCursor(17, 17); // Set cursor to the center
-  ssd1306_WriteString("Hello, 4100901!", Font_7x10, White);
-  ssd1306_UpdateScreen(); // Update the display to show the
-  HAL_UART_Transmit(&huart2, (uint8_t *)"Hello, 4100901!\r\n", 17, HAL_MAX_DELAY);
   while (1) {
-    heartbeat(); // Call the heartbeat function to toggle the LED
+    heartbeat();
 
-    // TODO: TAREA - Descomentar cuando implementen la máquina de estados
-    // room_control_update(&room_system);
+    // Leer potenciómetro PA0 como "temperatura"
+    HAL_ADC_Start(&hadc1);
+    if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+        uint32_t adc_val = HAL_ADC_GetValue(&hadc1);
+        // Simula temperatura entre 20 y 40 grados (según pot)
+        float temp_sim = 20.0f + ((adc_val / 4095.0f) * 20.0f);
+        room_control_set_temperature(&room_system, temp_sim);
+    }
+    HAL_ADC_Stop(&hadc1);
 
-    // DEMO: Keypad functionality - Remove when implementing room control logic
+    room_control_update(&room_system);
+
     if (keypad_interrupt_pin != 0) {
       char key = keypad_scan(&keypad, keypad_interrupt_pin);
       if (key != '\0') {
-        write_to_oled(&key, White, 31, 31);
-        
-        // TODO: TAREA - Descomentar para enviar teclas al sistema de control
-        // room_control_process_key(&room_system, key);
+        room_control_process_key(&room_system, key);
       }
       keypad_interrupt_pin = 0;
     }
-
-    // DEMO: Button functionality - Remove when implementing room control logic  
     if (button_pressed) {
-      write_to_oled("Button Pressed!", White, 17, 17); // Display message on OLED
-      button_pressed = 0; // Reset the flag
+      write_to_oled("Button Pressed!", White, 17, 17);
+      button_pressed = 0;
     }
-
-    // DEMO: UART functionality - Remove when implementing room control logic
     if (usart_2_rxbyte != 0) {
-      write_to_oled((char *)&usart_2_rxbyte, White, 31, 31); // Display received byte on OLED
-      usart_2_rxbyte = 0; // Reset the received byte variable
+      write_to_oled((char *)&usart_2_rxbyte, White, 31, 31);
+      usart_2_rxbyte = 0;
     }
-
-    // TODO: TAREA - Implementar procesamiento de comandos remotos
-    // command_parser_process(); // Procesar comandos de UART2 y UART3
-    
-    // TODO: TAREA - Leer sensor de temperatura y actualizar sistema
-    // float temperature = temperature_sensor_read();
-    // room_control_set_temperature(&room_system, temperature);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -276,6 +258,73 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
