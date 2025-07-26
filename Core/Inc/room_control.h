@@ -18,9 +18,9 @@ typedef enum {
 
 typedef enum {
     FAN_LEVEL_OFF = 0,    // 0% PWM
-    FAN_LEVEL_LOW = 30,   // 30% PWM
-    FAN_LEVEL_MED = 70,   // 70% PWM
-    FAN_LEVEL_HIGH = 100  // 100% PWM
+    FAN_LEVEL_LOW = 1,   // 30% PWM  
+    FAN_LEVEL_MED = 2,   // 70% PWM
+    FAN_LEVEL_HIGH = 3  // 100% PWM
 } fan_level_t;
 
 typedef struct {
@@ -30,22 +30,18 @@ typedef struct {
     uint8_t input_index;
     uint32_t last_input_time;
     uint32_t state_enter_time;
-
+    
     // Door control
     bool door_locked;
-
-    // Temperature and fan control
+    
+    // Temperature and fan control  
     float current_temperature;
     fan_level_t current_fan_level;
     bool manual_fan_override;
-
+    
     // Display update flags
     bool display_update_needed;
 } room_control_t;
-
-// Callback para mensajes seriales
-typedef void (*room_control_serial_callback_t)(const char *msg);
-void room_control_set_serial_callback(room_control_serial_callback_t cb);
 
 // Public functions
 void room_control_init(room_control_t *room);

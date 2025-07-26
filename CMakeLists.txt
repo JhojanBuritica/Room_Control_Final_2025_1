@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/ssd1306/ssd1306_fonts.c
     Drivers/keypad/keypad.c
     Core/Src/room_control.c
+    Core/Src/command_parser.c
     # Add user sources here
 )
 
@@ -62,6 +63,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/ring_buffer
     Drivers/ssd1306
     Drivers/keypad
+    
     # Add user defined include paths
 )
 
